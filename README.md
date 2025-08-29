@@ -64,7 +64,7 @@ self.recipient_email = "recipient@gmail.com"
 
 ▶️ Run
 
-python Search_Engine_Main.py
+python Search_engine_Main.py
 
 Then choose Normal User or Aged User mode.
 
