@@ -21,12 +21,16 @@ class SmartSearchApp:
         self.root.configure(bg="white")
 
         # ====== API setup ======
-        self.API_KEY = ""  # <-- Paste your API Key here
+        self.API_KEY = ""  # <-- Paste your Google API Key here
         self.CX_MAP = {
             "General": "",   # <-- Paste your CX ID for General
             "Shopping": "",  # <-- Paste your CX ID for Shopping
             "News": ""       # <-- Paste your CX ID for News
         }
+
+        # ====== Hugging Face setup ======
+        self.HF_API_KEY = ""  # <-- Paste your Hugging Face Token here
+        self.HF_MODEL = "facebook/bart-large-mnli"  # zero-shot classifier
 
         # ====== Email alert ======
         self.sender_email = ""       # <-- Your Gmail
@@ -123,8 +127,8 @@ class SmartSearchApp:
             try:
                 all_results = self.fetch_google_search_results(query)
                 self.root.after(0, lambda results=all_results: self.update_results(results))
-            except Exception as e:
-                pass  # Silent fail
+            except Exception:
+                pass
             finally:
                 self.root.after(0, lambda: self.update_ui_searching(False))
                 self.search_queue.task_done()
@@ -178,19 +182,39 @@ class SmartSearchApp:
     def start_search(self):
         query = self.entry.get().strip()
         self.suggestion_listbox.pack_forget()
-        if not query:
-            return
-        if self.is_searching:
+        if not query or self.is_searching:
             return
         if self.user_type == "aged":
             self.check_for_risky_query(query)
         self.search_queue.put(query)
 
+    # ====== GenAI Risk Detector ======
+    def ai_risk_check(self, query):
+        if not self.HF_API_KEY:
+            return False
+        url = f"https://api-inference.huggingface.co/models/{self.HF_MODEL}"
+        headers = {"Authorization": f"Bearer {self.HF_API_KEY}"}
+        payload = {"inputs": query, "parameters": {"candidate_labels": ["scam", "finance", "personal info", "safe"]}}
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            result = res.json()
+            if "labels" in result:
+                top_label = result["labels"][0].lower()
+                if top_label in ["scam", "finance", "personal info"]:
+                    return True
+        except:
+            return False
+        return False
+
     def check_for_risky_query(self, query):
+        # keyword based
         for keyword in self.risky_keywords:
             if keyword.lower() in query.lower():
                 self.trigger_alert(query)
-                break
+                return
+        # AI based
+        if self.ai_risk_check(query):
+            self.trigger_alert(query)
 
     # ====== Silent alert ======
     def trigger_alert(self, query):
@@ -218,7 +242,7 @@ Please check on your loved one and ensure they are safe from online scams.
                 server.login(self.sender_email, self.sender_password)
                 server.sendmail(self.sender_email, self.recipient_email, msg.as_string())
         except:
-            pass  # Silent fail, no pop-ups
+            pass
 
     # ====== Google Search ======
     def fetch_google_search_results(self, query):
